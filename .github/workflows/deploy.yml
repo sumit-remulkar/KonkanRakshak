@@ -1,0 +1,51 @@
+name: KonkanRakshak CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Build & Test ──────────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build Docker image
+        run: docker build -t konkan-rakshak:${{ github.sha }} .
+
+      - name: Run health check
+        run: |
+          docker run -d -p 8000:8000 \
+            -e OPENWEATHER_API_KEY=test \
+            -e GROQ_API_KEY=test \
+            konkan-rakshak:${{ github.sha }}
+          sleep 6
+          curl -f http://localhost:8000/health
+          curl -f http://localhost:8000/villages
+
+  # ── Job 2: Deploy to Render ──────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Render
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          echo "✅ Deploy triggered on Render.com"
